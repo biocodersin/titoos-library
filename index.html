@@ -1034,15 +1034,113 @@
         white-space: nowrap
       }
     }
+
+
+    /* Shared-link password gate */
+    body.locked>header,
+    body.locked>.controls,
+    body.locked>.stats,
+    body.locked>.table-wrap,
+    body.locked>.edit-modal-backdrop {
+      visibility: hidden;
+    }
+
+    #passwordGate {
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: linear-gradient(135deg, #f7f6f2 0%, #eef4ff 50%, #fff7ed 100%);
+    }
+
+    #passwordGate.hidden {
+      display: none
+    }
+
+    .password-card {
+      width: min(420px, 100%);
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 22px;
+      padding: 32px;
+      box-shadow: 0 20px 60px rgba(23, 33, 59, .14);
+      text-align: center;
+    }
+
+    .password-card h2 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      color: #17213b
+    }
+
+    .password-card p {
+      margin: 0 0 22px;
+      color: #69738a;
+      line-height: 1.5
+    }
+
+    .password-input {
+      width: 100%;
+      height: 48px;
+      border: 1px solid #d7dbe5;
+      border-radius: 12px;
+      padding: 0 14px;
+      font-size: 16px;
+      outline: none
+    }
+
+    .password-input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, .12)
+    }
+
+    .password-submit {
+      width: 100%;
+      height: 48px;
+      margin-top: 12px;
+      border: 0;
+      border-radius: 12px;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer
+    }
+
+    .password-submit:hover {
+      filter: brightness(.96)
+    }
+
+    .password-error {
+      min-height: 22px;
+      margin-top: 10px;
+      color: #dc2626;
+      font-size: 13px
+    }
   </style>
 </head>
 
-<body>
+<body class="locked">
+
+  <div id="passwordGate" aria-label="Private library access">
+    <div class="password-card">
+      <h2>📚 Titoos Library</h2>
+      <p>This library is private. Enter the shared password to continue.</p>
+      <form id="passwordForm">
+        <input id="passwordInput" class="password-input" type="password" autocomplete="current-password"
+          placeholder="Enter password" autofocus required>
+        <button class="password-submit" type="submit">Unlock Library</button>
+        <div id="passwordError" class="password-error" aria-live="polite"></div>
+      </form>
+    </div>
+  </div>
 
   <header class="top">
     <div class="top-inner">
       <div>
-        <h1>Titoo's Library</h1>
+        <h1>Books from Your Collection</h1>
         <div class="subtitle" id="subtitle"></div>
       </div>
       <div class="quote">“Good books lead to great conversations.”<small>YOUR COLLECTION</small></div>
@@ -1130,6 +1228,38 @@
     const SUPABASE_KEY = "sb_publishable_CEco9ApzYubocsqIYI5G4A_1qPT_wWl";
     const STORAGE_BUCKET = "book-covers";
     const PAGE_SIZE = 10;
+
+    const PASSWORD_HASH = "bdb91b92a5c5d4a4cd1a078e43926d58d663b739df0f098d758e5c0fd4df9e2c";
+    const PASSWORD_SESSION_KEY = "titoos-library-unlocked";
+
+    async function sha256(value) {
+      const data = new TextEncoder().encode(value);
+      const hash = await crypto.subtle.digest("SHA-256", data);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    async function unlockLibrary(password) {
+      const hash = await sha256(password);
+      if (hash !== PASSWORD_HASH) return false;
+      sessionStorage.setItem(PASSWORD_SESSION_KEY, "1");
+      document.body.classList.remove("locked");
+      document.getElementById("passwordGate").classList.add("hidden");
+      return true;
+    }
+
+    function startLibrary() {
+      listEl.innerHTML = '<div class="empty">Loading your library…</div>';
+      Promise.all([loadBooks(), loadBookSections()]).then(() => {
+        render();
+      }).catch(err => {
+        console.error(err);
+        listEl.innerHTML = `<div class="empty">
+      <strong>Could not connect to your library.</strong><br>
+      ${esc(err.message)}<br><br>
+      Check the Supabase RLS policies.
+    </div>`;
+      });
+    }
 
     let BOOKS = [];
     let BOOK_SECTIONS = [];
@@ -1788,17 +1918,30 @@
       page = 1; render();
     });
 
-    listEl.innerHTML = '<div class="empty">Loading your library…</div>';
-    Promise.all([loadBooks(), loadBookSections()]).then(() => {
-      render();
-    }).catch(err => {
-      console.error(err);
-      listEl.innerHTML = `<div class="empty">
-   <strong>Could not connect to your library.</strong><br>
-   ${esc(err.message)}<br><br>
-   Check the Supabase RLS policies from Step 2.
- </div>`;
+    const passwordGate = document.getElementById("passwordGate");
+    const passwordForm = document.getElementById("passwordForm");
+    const passwordInput = document.getElementById("passwordInput");
+    const passwordError = document.getElementById("passwordError");
+
+    passwordForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      passwordError.textContent = "";
+      const ok = await unlockLibrary(passwordInput.value);
+      if (!ok) {
+        passwordError.textContent = "Incorrect password.";
+        passwordInput.value = "";
+        passwordInput.focus();
+        return;
+      }
+      startLibrary();
     });
+
+    if (sessionStorage.getItem(PASSWORD_SESSION_KEY) === "1") {
+      document.body.classList.remove("locked");
+      passwordGate.classList.add("hidden");
+      startLibrary();
+    }
+
   </script>
 </body>
 
