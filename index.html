@@ -917,9 +917,15 @@
     }
 
     .section-badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 10px;
+      border-radius: 9px;
       background: #eef2ff;
       color: #4338ca;
       border: 1px solid #c7d2fe;
+      font: 13px Arial, sans-serif;
     }
 
     @media (max-width:700px) {
@@ -1267,7 +1273,7 @@
   <header class="top">
     <div class="top-inner">
       <div>
-        <h1>Books from Your Collection</h1>
+        <h1>Titoos's Library</h1>
         <div class="subtitle" id="subtitle"></div>
       </div>
       <div class="top-right">
@@ -1622,7 +1628,6 @@
 
 
     async function updateBookSection(bookId, value) {
-      if (!requireAdmin()) return;
       const section = value || null;
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}`, {
@@ -1643,7 +1648,6 @@
     }
 
     async function addSection() {
-      if (!requireAdmin()) return;
       const name = prompt("Enter a new section name:");
       if (!name || !name.trim()) return;
 
@@ -1801,8 +1805,10 @@
          </select>
        </div>
        <div class="cell actions-cell actions">
-         <button class="iconbtn" title="Edit book" data-replace="${esc(b.id)}">✎</button>
-         ${cover ? `<button class="iconbtn delete" title="Remove cover" data-remove="${esc(b.id)}">×</button>` : ""}
+         ${isAdmin()
+           ? `<button class="iconbtn" title="Edit book" data-replace="${esc(b.id)}">✎</button>
+              ${cover ? `<button class="iconbtn delete" title="Remove cover" data-remove="${esc(b.id)}">×</button>` : ""}`
+           : `<span class="muted">View only</span>`}
        </div>
        <div class="comment-box" data-comments="${esc(b.id)}">
          <div class="comments-loading">Loading notes…</div>
@@ -1980,7 +1986,7 @@
       try {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/comments?select=id,book_id,comment,created_at&book_id=eq.${encodeURIComponent(bookId)}&order=created_at.desc`,
-          { headers: getHeaders() }
+          { headers: anonHeaders }
         );
         if (!res.ok) throw new Error(await res.text());
         const comments = await res.json();
@@ -1996,30 +2002,31 @@
           </div>
         `).join("") : ""}
       </div>
-      ${isAdmin() ? `<div class="comment-form">
+      <div class="comment-form">
         <textarea class="comment-input" rows="1" placeholder="Add a note or comment…" data-comment-input="${esc(bookId)}"></textarea>
         <button class="comment-add" data-add-comment="${esc(bookId)}">Add</button>
-      </div>` : ""}
+      </div>
     `;
 
         const add = box.querySelector("[data-add-comment]");
         const input = box.querySelector("[data-comment-input]");
-        add.addEventListener("click", () => addComment(bookId, input, box));
-        input.addEventListener("keydown", e => {
-          if ((e.ctrlKey || e.metaKey) && e.key === "Enter") add.click();
-        });
+        if (add && input) {
+          add.addEventListener("click", () => addComment(bookId, input, box));
+          input.addEventListener("keydown", e => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "Enter") add.click();
+          });
+        }
 
         box.querySelectorAll("[data-delete-comment]").forEach(btn => {
           btn.addEventListener("click", () => deleteComment(bookId, btn.dataset.deleteComment));
         });
       } catch (err) {
-        console.error(err);
-        box.innerHTML = `<div class="comments-loading">Could not load notes.</div>`;
+        console.error("Could not load notes:", err);
+        box.innerHTML = `<div class="comments-loading">Could not load notes. ${esc(err.message || "")}</div>`;
       }
     }
 
     async function addComment(bookId, input, box) {
-      if (!requireAdmin()) return;
       const text = input.value.trim();
       if (!text) return;
 
@@ -2247,3 +2254,5 @@
 </body>
 
 </html>
+
+
