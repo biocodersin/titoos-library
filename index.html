@@ -78,6 +78,133 @@
       margin-top: 5px
     }
 
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .admin-login-btn,
+    .admin-logout-btn {
+      height: 40px;
+      border: 1px solid #dfe3ea;
+      background: #fff;
+      border-radius: 10px;
+      padding: 0 13px;
+      color: #26334d;
+      cursor: pointer;
+      font: 600 13px Arial, sans-serif;
+    }
+
+    .admin-login-btn {
+      background: #17213b;
+      color: #fff;
+      border-color: #17213b;
+    }
+
+    .admin-login-btn:hover {
+      filter: brightness(.95);
+    }
+
+    #addSection:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .admin-logout-btn:hover {
+      background: #f8fafc;
+    }
+
+    .admin-status {
+      width: 100%;
+      text-align: right;
+      color: #64748b;
+      font: 11px Arial, sans-serif;
+    }
+
+    .auth-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, .45);
+      backdrop-filter: blur(4px);
+    }
+
+    .auth-modal-backdrop.open {
+      display: flex;
+    }
+
+    .auth-modal {
+      width: min(420px, 100%);
+      background: #fff;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 25px 70px rgba(15, 23, 42, .25);
+    }
+
+    .auth-modal h2 {
+      margin: 0 0 7px;
+      font-size: 22px;
+    }
+
+    .auth-modal p {
+      margin: 0 0 18px;
+      color: #69738a;
+      font: 13px/1.45 Arial, sans-serif;
+    }
+
+    .auth-field {
+      width: 100%;
+      height: 44px;
+      margin-top: 8px;
+      border: 1px solid #dfe3ea;
+      border-radius: 9px;
+      padding: 0 11px;
+      font: 14px Arial, sans-serif;
+      outline: none;
+    }
+
+    .auth-field:focus {
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 2px #dbeafe;
+    }
+
+    .auth-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .auth-actions button {
+      border: 1px solid #dfe3ea;
+      border-radius: 9px;
+      padding: 9px 13px;
+      cursor: pointer;
+      font: 600 13px Arial, sans-serif;
+      background: #fff;
+    }
+
+    #authLogin {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
+
+    #authError {
+      min-height: 20px;
+      margin-top: 8px;
+      color: #dc2626;
+      font: 12px/1.4 Arial, sans-serif;
+    }
+
+
     .controls {
       max-width: 1500px;
       margin: 16px auto 10px;
@@ -1143,7 +1270,12 @@
         <h1>Books from Your Collection</h1>
         <div class="subtitle" id="subtitle"></div>
       </div>
-      <div class="quote">“Good books lead to great conversations.”<small>YOUR COLLECTION</small></div>
+      <div class="top-right">
+        <div class="quote">“Good books lead to great conversations.”<small>YOUR COLLECTION</small></div>
+        <button id="adminLoginBtn" class="admin-login-btn" type="button">Admin Login</button>
+        <button id="adminLogoutBtn" class="admin-logout-btn" type="button" hidden>Logout</button>
+        <div id="adminStatus" class="admin-status">View-only</div>
+      </div>
     </div>
   </header>
 
@@ -1193,6 +1325,20 @@
   </main>
 
 
+  <div class="auth-modal-backdrop" id="authBackdrop">
+    <form class="auth-modal" id="authForm">
+      <h2>Admin Login</h2>
+      <p>Sign in with your Supabase account to edit the library, manage covers, comments and sections.</p>
+      <input id="authEmail" class="auth-field" type="email" autocomplete="username" placeholder="Email" required>
+      <input id="authPassword" class="auth-field" type="password" autocomplete="current-password" placeholder="Password" required>
+      <div id="authError" aria-live="polite"></div>
+      <div class="auth-actions">
+        <button type="button" id="authCancel">Cancel</button>
+        <button type="submit" id="authLogin">Login</button>
+      </div>
+    </form>
+  </div>
+
   <div class="edit-modal-backdrop" id="editBackdrop">
     <div class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
       <h2 id="editTitle">Edit Book</h2>
@@ -1231,6 +1377,9 @@
 
     const PASSWORD_HASH = "bdb91b92a5c5d4a4cd1a078e43926d58d663b739df0f098d758e5c0fd4df9e2c";
     const PASSWORD_SESSION_KEY = "titoos-library-unlocked";
+    const AUTH_STORAGE_KEY = "titoos-library-supabase-session";
+
+    let AUTH_SESSION = null;
 
     async function sha256(value) {
       const data = new TextEncoder().encode(value);
@@ -1244,8 +1393,128 @@
       sessionStorage.setItem(PASSWORD_SESSION_KEY, "1");
       document.body.classList.remove("locked");
       document.getElementById("passwordGate").classList.add("hidden");
+      updateAdminUI();
       return true;
     }
+
+
+    const adminLoginBtn = document.getElementById("adminLoginBtn");
+    const adminLogoutBtn = document.getElementById("adminLogoutBtn");
+    const adminStatus = document.getElementById("adminStatus");
+    const authBackdrop = document.getElementById("authBackdrop");
+    const authForm = document.getElementById("authForm");
+    const authEmail = document.getElementById("authEmail");
+    const authPassword = document.getElementById("authPassword");
+    const authError = document.getElementById("authError");
+    const authLoginBtn = document.getElementById("authLogin");
+
+    function updateAdminUI() {
+      const loggedIn = isAdmin();
+      adminLoginBtn.hidden = loggedIn;
+      adminLogoutBtn.hidden = !loggedIn;
+      adminStatus.textContent = loggedIn
+        ? `Admin: ${AUTH_SESSION.user?.email || "signed in"}`
+        : "View-only";
+      document.getElementById("addSection").disabled = !loggedIn;
+      if (loggedIn) document.getElementById("addSection").title = "Add a section";
+      else document.getElementById("addSection").title = "Admin login required";
+    }
+
+    function openAuthModal() {
+      authError.textContent = "";
+      authPassword.value = "";
+      authBackdrop.classList.add("open");
+      setTimeout(() => authEmail.focus(), 30);
+    }
+
+    function closeAuthModal() {
+      authBackdrop.classList.remove("open");
+    }
+
+    async function loginAdmin(email, password) {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error_description || data.msg || data.message || "Login failed.");
+      AUTH_SESSION = data;
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+      updateAdminUI();
+      closeAuthModal();
+      render();
+    }
+
+    async function refreshAdminSession(refreshToken) {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      AUTH_SESSION = data;
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+      return true;
+    }
+
+    async function restoreAdminSession() {
+      try {
+        const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved?.access_token && saved?.user) {
+          AUTH_SESSION = saved;
+          // Refresh when possible so an expired access token does not block editing.
+          if (saved.refresh_token) await refreshAdminSession(saved.refresh_token);
+        }
+      } catch (err) {
+        console.warn("Could not restore admin session:", err);
+        AUTH_SESSION = null;
+        localStorage.removeItem(AUTH_STORAGE_KEY);
+      }
+      updateAdminUI();
+    }
+
+    function logoutAdmin() {
+      AUTH_SESSION = null;
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      updateAdminUI();
+      render();
+    }
+
+    adminLoginBtn.addEventListener("click", openAuthModal);
+    adminLogoutBtn.addEventListener("click", logoutAdmin);
+    document.getElementById("authCancel").addEventListener("click", closeAuthModal);
+    authBackdrop.addEventListener("click", e => {
+      if (e.target === authBackdrop) closeAuthModal();
+    });
+
+    authForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      authError.textContent = "";
+      authLoginBtn.disabled = true;
+      try {
+        await loginAdmin(authEmail.value.trim(), authPassword.value);
+        authPassword.value = "";
+      } catch (err) {
+        console.error(err);
+        authError.textContent = err.message || "Login failed.";
+      } finally {
+        authLoginBtn.disabled = false;
+      }
+    });
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && authBackdrop.classList.contains("open")) closeAuthModal();
+    });
 
     function startLibrary() {
       listEl.innerHTML = '<div class="empty">Loading your library…</div>';
@@ -1272,11 +1541,31 @@
     const customGenreEl = document.getElementById("customGenre");
     const listEl = document.getElementById("list");
 
-    const headers = {
+    const anonHeaders = {
       "apikey": SUPABASE_KEY,
       "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json"
     };
+
+    function getHeaders(write = false) {
+      if (write && !AUTH_SESSION?.access_token) {
+        throw new Error("Admin login required.");
+      }
+      return {
+        ...anonHeaders,
+        "Authorization": `Bearer ${write ? AUTH_SESSION.access_token : (AUTH_SESSION?.access_token || SUPABASE_KEY)}`
+      };
+    }
+
+    function isAdmin() {
+      return Boolean(AUTH_SESSION?.access_token);
+    }
+
+    function requireAdmin() {
+      if (isAdmin()) return true;
+      openAuthModal();
+      return false;
+    }
 
     function parts(value) {
       return String(value || "").split(/[,;|/]+/).map(x => x.trim()).filter(Boolean);
@@ -1296,7 +1585,7 @@
     async function loadBookSections() {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/book_sections?select=id,name&order=name.asc`,
-        { headers }
+        { headers: getHeaders() }
       );
       if (!res.ok) throw new Error(`Could not load sections (${res.status})`);
       BOOK_SECTIONS = await res.json();
@@ -1333,11 +1622,12 @@
 
 
     async function updateBookSection(bookId, value) {
+      if (!requireAdmin()) return;
       const section = value || null;
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/books?id=eq.${bookId}`, {
         method: "PATCH",
-        headers: { ...headers, "Prefer": "return=minimal" },
+        headers: { ...getHeaders(true), "Prefer": "return=minimal" },
         body: JSON.stringify({ section })
       });
 
@@ -1353,6 +1643,7 @@
     }
 
     async function addSection() {
+      if (!requireAdmin()) return;
       const name = prompt("Enter a new section name:");
       if (!name || !name.trim()) return;
 
@@ -1367,7 +1658,7 @@
 
       const res = await fetch(`${SUPABASE_URL}/rest/v1/book_sections`, {
         method: "POST",
-        headers: { ...headers, "Prefer": "return=representation" },
+        headers: { ...getHeaders(true), "Prefer": "return=representation" },
         body: JSON.stringify({ name: cleanName })
       });
 
@@ -1388,7 +1679,7 @@
 
     async function loadBooks() {
       const url = `${SUPABASE_URL}/rest/v1/books?select=id,title,author,genre,custom_genre,cover_url,section&order=id.asc`;
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { headers: getHeaders() });
       if (!res.ok) throw new Error(`Could not load books (${res.status})`);
       BOOKS = await res.json();
       populateFilters();
@@ -1537,6 +1828,7 @@
     }
 
     async function uploadCover(id, file) {
+      if (!requireAdmin()) return;
       if (!file) return;
       if (!file.type.startsWith("image/")) return alert("Please choose an image.");
       const book = BOOKS.find(b => String(b.id) === String(id));
@@ -1552,7 +1844,7 @@
             method: "POST",
             headers: {
               "apikey": SUPABASE_KEY,
-              "Authorization": `Bearer ${SUPABASE_KEY}`,
+              "Authorization": `Bearer ${AUTH_SESSION?.access_token || SUPABASE_KEY}`,
               "x-upsert": "true",
               "Content-Type": file.type
             },
@@ -1566,7 +1858,7 @@
           `${SUPABASE_URL}/rest/v1/books?id=eq.${encodeURIComponent(id)}`,
           {
             method: "PATCH",
-            headers: { ...headers, "Prefer": "return=minimal" },
+            headers: { ...getHeaders(true), "Prefer": "return=minimal" },
             body: JSON.stringify({ cover_url: coverUrl })
           }
         );
@@ -1581,6 +1873,7 @@
     }
 
     async function removeCover(id) {
+      if (!requireAdmin()) return;
       const book = BOOKS.find(b => String(b.id) === String(id));
       if (!book) return;
       if (!confirm("Remove this book cover?")) return;
@@ -1591,7 +1884,7 @@
           `${SUPABASE_URL}/rest/v1/books?id=eq.${encodeURIComponent(id)}`,
           {
             method: "PATCH",
-            headers: { ...headers, "Prefer": "return=minimal" },
+            headers: { ...getHeaders(true), "Prefer": "return=minimal" },
             body: JSON.stringify({ cover_url: null })
           }
         );
@@ -1601,7 +1894,7 @@
         if (old && old.includes(`/storage/v1/object/public/${STORAGE_BUCKET}/`)) {
           const path = old.split(`/storage/v1/object/public/${STORAGE_BUCKET}/`)[1];
           await fetch(`${SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${path}`, {
-            method: "DELETE", headers
+            method: "DELETE", headers: getHeaders(true)
           }).catch(() => { });
         }
         book.cover_url = null;
@@ -1613,6 +1906,7 @@
     }
 
     async function findCoverForBook(book) {
+      if (!isAdmin()) return false;
       if (book.cover_url || !book.title) return false;
 
       try {
@@ -1630,7 +1924,7 @@
           `${SUPABASE_URL}/rest/v1/books?id=eq.${encodeURIComponent(book.id)}`,
           {
             method: "PATCH",
-            headers: { ...headers, "Prefer": "return=minimal" },
+            headers: { ...getHeaders(true), "Prefer": "return=minimal" },
             body: JSON.stringify({ cover_url: cover })
           }
         );
@@ -1686,7 +1980,7 @@
       try {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/comments?select=id,book_id,comment,created_at&book_id=eq.${encodeURIComponent(bookId)}&order=created_at.desc`,
-          { headers }
+          { headers: getHeaders() }
         );
         if (!res.ok) throw new Error(await res.text());
         const comments = await res.json();
@@ -1698,14 +1992,14 @@
           <div class="comment-item">
             <div class="comment-text">${esc(c.comment)}</div>
             <div class="comment-date">${esc(formatCommentDate(c.created_at))}</div>
-            <button class="comment-delete" title="Delete note" data-delete-comment="${esc(c.id)}">×</button>
+            ${isAdmin() ? `<button class="comment-delete" title="Delete note" data-delete-comment="${esc(c.id)}">×</button>` : ""}
           </div>
         `).join("") : ""}
       </div>
-      <div class="comment-form">
+      ${isAdmin() ? `<div class="comment-form">
         <textarea class="comment-input" rows="1" placeholder="Add a note or comment…" data-comment-input="${esc(bookId)}"></textarea>
         <button class="comment-add" data-add-comment="${esc(bookId)}">Add</button>
-      </div>
+      </div>` : ""}
     `;
 
         const add = box.querySelector("[data-add-comment]");
@@ -1725,6 +2019,7 @@
     }
 
     async function addComment(bookId, input, box) {
+      if (!requireAdmin()) return;
       const text = input.value.trim();
       if (!text) return;
 
@@ -1732,7 +2027,7 @@
       try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/comments`, {
           method: "POST",
-          headers: { ...headers, "Prefer": "return=representation" },
+          headers: { ...getHeaders(true), "Prefer": "return=representation" },
           body: JSON.stringify({ book_id: Number(bookId), comment: text })
         });
         if (!res.ok) throw new Error(await res.text());
@@ -1748,11 +2043,12 @@
     }
 
     async function deleteComment(bookId, commentId) {
+      if (!requireAdmin()) return;
       if (!confirm("Delete this note?")) return;
       try {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/comments?id=eq.${encodeURIComponent(commentId)}`,
-          { method: "DELETE", headers }
+          { method: "DELETE", headers: getHeaders(true) }
         );
         if (!res.ok) throw new Error(await res.text());
         await loadComments(bookId);
@@ -1799,6 +2095,7 @@
     }
 
     async function saveBookChanges(e) {
+      if (!requireAdmin()) return;
       e.preventDefault();
       if (editingBookId === null) return;
 
@@ -1819,7 +2116,7 @@
           `${SUPABASE_URL}/rest/v1/books?id=eq.${encodeURIComponent(editingBookId)}`,
           {
             method: "PATCH",
-            headers: { ...headers, "Prefer": "return=minimal" },
+            headers: { ...getHeaders(true), "Prefer": "return=minimal" },
             body: JSON.stringify(payload)
           }
         );
@@ -1841,6 +2138,7 @@
     }
 
     async function deleteBook() {
+      if (!requireAdmin()) return;
       if (editingBookId === null) return;
       const book = BOOKS.find(b => String(b.id) === editingBookId);
       if (!book) return;
@@ -1850,7 +2148,7 @@
       try {
         const res = await fetch(
           `${SUPABASE_URL}/rest/v1/books?id=eq.${encodeURIComponent(editingBookId)}`,
-          { method: "DELETE", headers }
+          { method: "DELETE", headers: getHeaders(true) }
         );
         if (!res.ok) throw new Error(await res.text());
 
@@ -1936,11 +2234,14 @@
       startLibrary();
     });
 
-    if (sessionStorage.getItem(PASSWORD_SESSION_KEY) === "1") {
-      document.body.classList.remove("locked");
-      passwordGate.classList.add("hidden");
-      startLibrary();
-    }
+    (async function boot() {
+      await restoreAdminSession();
+      if (sessionStorage.getItem(PASSWORD_SESSION_KEY) === "1") {
+        document.body.classList.remove("locked");
+        passwordGate.classList.add("hidden");
+        startLibrary();
+      }
+    })();
 
   </script>
 </body>
